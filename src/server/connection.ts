@@ -2,205 +2,53 @@ import * as mysql from "mysql2/promise";
 import * as dotenv from "dotenv";
 
 export async function connectSingleStore(
-    config: Partial<mysql.ConnectionOptions> = {}
+  config: Partial<mysql.ConnectionOptions> = {}
 ) {
-    dotenv.config();
+  dotenv.config();
 
-    const baseConfig: mysql.ConnectionOptions = {
-        host: process.env.HOST,
-        password: process.env.PASSWORD,
-        user: "admin",
-    };
-
-    return await mysql.createConnection({
-        ...baseConfig,
-        ...config,
-    });
+  const baseConfig: mysql.ConnectionOptions = {
+    host: process.env.HOST,
+    port: Number(process.env.DB_PORT),
+    password: process.env.PASSWORD,
+    user: "admin",
+    database: "stock_sentiment",
+  };
+  return await mysql.createConnection({
+    ...baseConfig,
+    ...config,
+  });
 }
 
 export async function stopSingleStore(conn: mysql.Connection) {
-    await conn.end();
+  await conn.end();
 }
 
-export async function getDatabases({ conn }: { conn?: mysql.Connection } = {}) {
-    try {
-        let closeConn = false;
-        if (!conn) {
-            conn = await connectSingleStore();
-            closeConn = true;
-        }
-
-        const [results] = await conn.query("SHOW DATABASES");
-        console.log("get databases:", { results });
-
-        if (closeConn) {
-            await stopSingleStore(conn);
-        }
-
-        return results;
-    } catch (error) {
-        console.error({ error });
-        return error;
-    }
-}
-
-export async function createDatabase({
-    conn,
-    database,
+export async function readData({
+  conn,
+  database,
+  embedding,
 }: {
-    conn?: mysql.Connection;
-    database: string;
+  conn?: mysql.Connection;
+  database: string;
+  embedding: any;
 }) {
-    try {
-        let closeConn = false;
-        if (!conn) {
-            conn = await connectSingleStore();
-            closeConn = true;
-        }
-
-        const [results] = await conn.query("CREATE DATABASE IF NOT EXISTS ?", [
-            database,
-        ]);
-        console.log("create database:", database, { results });
-
-        if (closeConn) {
-            await stopSingleStore(conn);
-        }
-
-        return results;
-    } catch (error) {
-        console.error({ error });
-        return error;
+  try {
+    let closeConn = false;
+    if (!conn) {
+      conn = await connectSingleStore({ database });
+      closeConn = true;
     }
-}
 
-export async function deleteDatabase({
-    conn,
-    database,
-}: {
-    conn?: mysql.Connection;
-    database: string;
-}) {
-    try {
-        let closeConn = false;
-        if (!conn) {
-            conn = await connectSingleStore();
-            closeConn = true;
-        }
+    const [rows] = await conn.execute(
+      `SELECT text, DOT_PRODUCT(embedding, JSON_ARRAY_PACK('[${embedding}]')) AS similarity FROM tweets ORDER BY similarity DESC LIMIT 1`
+    );
 
-        const [results] = await conn.query("DROP DATABASE ?", [database]);
-        console.log("delete database:", database, { results });
-
-        if (closeConn) {
-            await stopSingleStore(conn);
-        }
-
-        return results;
-    } catch (error) {
-        console.error({ error });
-        return error;
+    if (closeConn) {
+      await stopSingleStore(conn);
     }
-}
-
-export async function createTable({
-    conn,
-    database,
-    table,
-    columns,
-}: {
-    conn?: mysql.Connection;
-    database: string;
-    table: string;
-    columns: Array<string>;
-}) {
-    try {
-        let closeConn = false;
-        if (!conn) {
-            conn = await connectSingleStore({ database });
-            closeConn = true;
-        }
-
-        const [results] = await conn.query(
-            `CREATE TABLE IF NOT EXISTS ${table} (${columns.toString()})`
-        );
-        console.log("create table:", table, { results });
-
-        if (closeConn) {
-            await stopSingleStore(conn);
-        }
-
-        return results;
-    } catch (error) {
-        console.error({ error });
-        return error;
-    }
-}
-
-export async function selectTable({
-    conn,
-    database,
-    table,
-}: {
-    conn?: mysql.Connection;
-    database: string;
-    table: string;
-}) {
-    try {
-        let closeConn = false;
-        if (!conn) {
-            conn = await connectSingleStore({ database });
-            closeConn = true;
-        }
-
-        const [rows, fields] = await conn.query(`SELECT * FROM ${table}`);
-        console.log("select table:", table, { rows });
-
-        if (closeConn) {
-            await stopSingleStore(conn);
-        }
-
-        return rows;
-    } catch (error) {
-        console.error({ error });
-        return error;
-    }
-}
-
-export async function insertTable({
-    conn,
-    database,
-    table,
-    columns,
-    values,
-}: {
-    conn?: mysql.Connection;
-    database: string;
-    table: string;
-    columns: Array<string>;
-    values: Array<any>;
-}) {
-    try {
-        let closeConn = false;
-        if (!conn) {
-            conn = await connectSingleStore({ database });
-            closeConn = true;
-        }
-
-        const [results] = await conn.query(
-            `INSERT INTO ${table} (${columns.toString()}) VALUES (?)`,
-            [values]
-        );
-
-        console.log("insert table:", table, { results });
-
-        if (closeConn) {
-            await stopSingleStore(conn);
-        }
-
-        return results;
-    } catch (error) {
-        console.log("put error");
-        console.error(error);
-        // return error;
-    }
+    return rows[0].text;
+  } catch (error) {
+    console.error(error);
+    return error;
+  }
 }
